@@ -16,3 +16,15 @@ We use Python 3. To install dependencies, issue the following command at the roo
 
 ## Secrets
 Write your secrets in secrets.yaml, see secrets.yaml.sample.
+
+## Usage
+The ./kops script supports a few subcommands and a number of arguments:
+
+### Create a Cluster
+The create subcommand allows you to create a Kubernetes cluster within your AWS account.
+
+Example:
+
+```
+./kops --aws_profile example create app staging contact@example.com email-smtp.eu-west-1.amazonaws.com:587 example.com clusters.example.com
+```
