@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Script to download the Prometheus Operator manifests."""
+import requests
+from contextlib import closing
+from pprint import pprint
+import os.path
+import tempfile
+import shutil
+import argparse
+
+
+def _download_manifests(args):
+    manifests_url = 'https://api.github.com/repos/coreos/' \
+        'prometheus-operator/contents/contrib/kube-prometheus/manifests'
+    with tempfile.TemporaryDirectory() as tempd:
+        orig_dir = os.getcwd()
+        os.makedirs(os.path.join(tempd, 'prometheus'))
+        os.chdir(os.path.join(tempd, 'prometheus'))
+        for dname in [
+            'prometheus-operator',
+            'node-exporter',
+            'kube-state-metrics',
+            'grafana',
+            'prometheus',
+            'alertmanager',
+        ]:
+            with closing(requests.get(
+                '{}/{}?ref=v{}'.format(manifests_url, dname, args.version)
+            )) as r:
+                r.raise_for_status()
+                os.makedirs(dname)
+                for obj in r.json():
+                    with closing(requests.get(obj['download_url'])) as file_r:
+                        file_r.raise_for_status()
+                        with open(os.path.join(dname, obj['name']), 'wb') as f:
+                            f.write(file_r.content)
+
+        os.chdir(orig_dir)
+
+        tgt_dir = os.path.join(
+            orig_dir, 'addons', 'prometheus', 'v{}'.format(args.version)
+        )
+        if os.path.exists(tgt_dir):
+            shutil.rmtree(tgt_dir)
+        shutil.move(
+            os.path.join(tempd, 'prometheus'),
+            tgt_dir
+        )
+
+
+_cl_parser = argparse.ArgumentParser(
+    description='Download manifest files for installing Prometheus Operator'
+)
+_cl_parser.add_argument(
+    'version', help='Specify version of Prometheus Operator'
+)
+_args = _cl_parser.parse_args()
+_download_manifests(_args)

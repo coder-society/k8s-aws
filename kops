@@ -1,0 +1,504 @@
+#!/usr/bin/env python3
+"""Wrapper script for kops.
+
+It has some intelligence built in in order to configure kops in a standard
+manner so that the need for configuration by the user is minimized.
+"""
+import subprocess
+import sys
+import argparse
+import os.path
+from datetime import datetime
+import re
+import time
+from base64 import b64encode
+from cryptography.hazmat.primitives import serialization as \
+    crypto_serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.backends import default_backend as \
+    crypto_default_backend
+import jinja2
+import yaml
+
+
+_TODAY = datetime.utcnow().date()
+
+
+def _info(msg):
+    sys.stdout.write('* {}\n'.format(msg))
+    sys.stdout.flush()
+
+
+def _error(msg):
+    sys.stderr.write('* {}\n'.format(msg))
+    sys.exit(1)
+
+
+def _get_key_pair(cluster_name):
+    """Get public key pair.
+
+    If the key pair doesn't already exist, one is created.
+    """
+    priv_key_path = 'id_rsa.{}'.format(cluster_name)
+    pub_key_path = 'id_rsa.pub.{}'.format(cluster_name)
+    if not os.path.exists(pub_key_path) or not os.path.exists(priv_key_path):
+        _info('Generating SSH key pair')
+        key = rsa.generate_private_key(
+            backend=crypto_default_backend(), public_exponent=65537,
+            key_size=2048
+        )
+        private_key = key.private_bytes(
+            crypto_serialization.Encoding.PEM,
+            crypto_serialization.PrivateFormat.PKCS8,
+            crypto_serialization.NoEncryption()
+        )
+        public_key = key.public_key().public_bytes(
+            crypto_serialization.Encoding.OpenSSH,
+            crypto_serialization.PublicFormat.OpenSSH
+        )
+        with open(priv_key_path, 'wb') as f:
+            f.write(private_key)
+        with open(pub_key_path, 'wb') as f:
+            f.write(public_key)
+        os.chmod(priv_key_path, 0o600)
+    else:
+        _info('Reusing SSH key pair')
+
+    return pub_key_path, priv_key_path
+
+
+def _install_prometheus(kubecfg_path):
+    """Install Prometheus Operator and associated stack."""
+    def apply_manifests(path):
+        subprocess.check_call([
+            'kubectl', '--kubeconfig', kubecfg_path, '-n', 'monitoring',
+            'apply', '-f', 'addons/prometheus/{}'.format(path),
+        ])
+
+    _info('Installing Prometheus Operator...')
+    proc = subprocess.Popen([
+        'kubectl', '--kubeconfig', kubecfg_path, 'get', 'namespace',
+        'monitoring',
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc.communicate()
+    if proc.returncode != 0:
+        subprocess.check_call([
+            'kubectl', '--kubeconfig', kubecfg_path, 'create', 'namespace',
+            'monitoring',
+        ])
+    apply_manifests('prometheus-operator/')
+    # Wait for TPRs to become ready
+    for tpr in ('servicemonitor', 'prometheus', 'alertmanager'):
+        while True:
+            try:
+                subprocess.check_call([
+                    'kubectl', '--kubeconfig', kubecfg_path,
+                    '-n', 'monitoring', 'get', tpr,
+                ])
+            except subprocess.CalledProcessError:
+                time.sleep(5)
+                continue
+            else:
+                break
+
+    for path in [
+        'node-exporter/', 'kube-state-metrics/',
+        'grafana/grafana-credentials.yaml', 'grafana/', 'prometheus/',
+        'alertmanager/',
+    ]:
+        apply_manifests(path)
+
+
+def _b64_encode_secrets(key2val):
+    encoded_dict = {}
+    for k, v in key2val.items():
+        if isinstance(v, dict):
+            encoded_dict[k] = _b64_encode_secrets(v)
+        else:
+            encoded_dict[k] = b64encode(v.encode()).decode()
+
+
+def _write_secret(fpath, name, namespace, data):
+    data_encoded = {}
+    for k, v in data.items():
+        data_encoded[k] = b64encode(v.encode()).decode()
+
+    if not os.path.exists(os.path.dirname(fpath)):
+        os.makedirs(os.path.dirname(fpath))
+    secret = {
+        'apiVersion': 'v1',
+        'type': 'Opaque',
+        'kind': 'Secret',
+        'metadata': {
+            'name': name,
+            'namespace': namespace,
+        },
+        'data': data_encoded,
+    }
+    with open(fpath, 'wt') as f:
+        f.write(yaml.dump(secret, default_flow_style=False) + '\n')
+
+
+def _generate_addons(args):
+    """Generate addon manifests."""
+    jinja_env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(searchpath='assets'),
+        undefined=jinja2.StrictUndefined
+    )
+    template = jinja_env.get_template('alertmanager-config.yaml')
+    with open('secrets.yaml', 'rt') as f:
+        secrets_env = yaml.load(f)
+    logging_secrets = secrets_env['logging']
+    assert args.domain is not None
+    assert args.email_recipient is not None
+    assert args.smtp_host is not None
+    template_env = {**{
+        'domain': args.domain,
+        'alertsEmailRecipient': args.email_recipient,
+        'smtpHost': args.smtp_host,
+    }, **secrets_env['alertmanager']}
+    alertmanager_config = template.render(template_env)
+
+    _write_secret(
+        'addons/prometheus/alertmanager/alertmanager-config.yaml',
+        'alertmanager-main', 'monitoring', {
+            'alertmanager.yaml': alertmanager_config,
+        }
+    )
+
+    _write_secret(
+        'addons/logging/env-secret.yaml', 'bootstrap-environment',
+        'kube-system', {
+            'es-s3-access-key': logging_secrets['esS3AccessKey'],
+            'es-s3-secret-key': logging_secrets['esS3SecretKey'],
+        }
+    )
+
+
+def _install_addons(kubecfg_path, args):
+    """Install addons into cluster."""
+    def install_addon(name):
+        _info('Installing addon {}...'.format(name))
+        subprocess.check_call([
+            'kubectl', '--kubeconfig', kubecfg_path, 'apply', '-f',
+            'addons/{}'.format(name),
+        ])
+
+    _generate_addons(args)
+
+    _wait_for_cluster(kubecfg_path)
+    while True:
+        try:
+            install_addon('kube-system-rbac.yaml')
+        except subprocess.CalledProcessError:
+            _info('Waiting for cluster to become ready...')
+            time.sleep(5)
+        else:
+            break
+
+    install_addon('kube-flannel-rbac.yaml')
+    install_addon('heapster.yaml')
+    install_addon('kube-dashboard.yaml')
+    install_addon('logging/')
+    _install_prometheus(kubecfg_path)
+
+    while True:
+        proc = subprocess.Popen([
+            'kubectl', '--kubeconfig', kubecfg_path, 'get', '--all-namespaces',
+            'pods', '-o',
+            'custom-columns=STATUS:.status.phase,NAME:.metadata.name',
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = [x.decode().strip() for x in proc.communicate()]
+        if proc.returncode == 0:
+            statuses = [x.split()[0] for x in stdout.splitlines()[1:]]
+            is_ready = True
+            for status in statuses:
+                if status.lower() != 'running':
+                    is_ready = False
+                    break
+
+            if is_ready:
+                break
+            else:
+                _info('Waiting for pods to become ready...')
+                time.sleep(5)
+        else:
+            _info('Waiting for cluster to become ready...')
+            time.sleep(5)
+
+
+def _wait_for_cluster(kubecfg_path):
+    """Wait for cluster to become ready."""
+    while True:
+        proc = subprocess.Popen([
+            'kubectl', '--kubeconfig', kubecfg_path, 'cluster-info',
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        proc.wait()
+        if proc.returncode != 0:
+            _info('Waiting for cluster to come up...')
+            time.sleep(5)
+        else:
+            break
+
+
+def _cmd_create(args):
+    """Invoke kops to create cluster."""
+    # Determine cluster name based on date and unique suffix if necessary
+    cluster_name = '{}.{}'.format(args.category, args.name)
+    re_cluster = re.compile(r'{}-(\d+)'.format(cluster_name), re.I)
+    existing_clusters = _run_kops(
+        ['get', 'clusters'], args, ignore_dry_run=True, get_output=True
+    ).splitlines()
+    conflicting_clusters = [
+        c for c in existing_clusters if c.startswith(cluster_name)
+    ]
+    cluster_numbers = []
+    for cluster in conflicting_clusters:
+        m = re_cluster.match(cluster)
+        cluster_numbers.append(int(m.group(1)))
+    cluster_numbers = sorted(cluster_numbers)
+    for cluster_number in range(1, 100):
+        if cluster_number not in cluster_numbers:
+            break
+    else:
+        _error('Couldn\'t determine a unique cluster name')
+
+    # Use three availability zones and one master for each in order to obtain
+    # high availability
+    zones = 'eu-central-1a,eu-central-1b,eu-central-1c'
+    full_cluster_name = '{}-{}.{}'.format(
+        cluster_name, cluster_number, args.domain
+    )
+    if _get_user_confirmation(
+        'Create cluster {} with AWS profile {}?'
+        .format(full_cluster_name, args.aws_profile)
+    ):
+        pub_key_path, priv_key_path = _get_key_pair(
+            '{}-{}'.format(cluster_name, cluster_number)
+        )
+        _info('Creating cluster \'{}\'...'.format(full_cluster_name))
+        # TODO: Figure out how to enable certificate based auth for API server:
+        # https://kubernetes.io/docs/admin/authentication/#x509-client-certs,
+        # and then combine with RBAC:
+        # https://kubernetes.io/docs/admin/authorization/rbac/
+        _run_kops([
+            'create', 'cluster', '--zones', zones, '--master-zones', zones,
+            '--topology', 'private', '--networking', 'flannel',
+            '--master-size', 'm4.large', '--node-size', 'm4.large',
+            '--node-count', '3', '--bastion', '--cloud', 'aws',
+            '--ssh-public-key', pub_key_path, '--authorization', 'RBAC',
+            '--yes',
+            full_cluster_name,
+        ], args)
+        if not args.dry_run:
+            kubecfg_path = _export_kubecfg(
+                '{}-{}'.format(cluster_name, cluster_number), args.domain, args
+            )
+            _install_addons(kubecfg_path, args)
+            # Label the nodes as being ready for Fluentd DaemonSet
+            # TODO: Use kops to set these labels as the kops cluster state
+            # will now be out of sync!
+            subprocess.check_call([
+                'kubectl', '--kubeconfig', kubecfg_path, 'label', 'node',
+                '--all', 'beta.kubernetes.io/fluentd-ds-ready=true',
+            ])
+            _info('You can SSH into your new cluster like this: {}'.format(
+                'ssh -A -i {} admin@bastion.{}'.format(
+                    priv_key_path, full_cluster_name
+                ),
+            ))
+
+
+def _cmd_delete(args):
+    """Invoke kops to delete cluster."""
+    if _get_user_confirmation(
+        'Are you sure you wish to delete cluster {} with AWS profile {}?'
+        .format(args.cluster, args.aws_profile)
+    ):
+        _info('Deleting cluster \'{}\'...'.format(args.cluster))
+        _run_kops([
+            'delete', 'cluster', '--yes', args.cluster,
+        ], args)
+
+
+def _get_user_confirmation(message):
+    """Ask user for confirmation, loops until y or n is pressed."""
+    import tty
+    import termios
+    sys.stdout.write('* {} (y/n) '.format(message))
+    sys.stdout.flush()
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        while True:
+            answer = sys.stdin.read(1)
+            if answer in ['y', 'n', ]:
+                break
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    sys.stdout.write('\n')
+    sys.stdout.flush()
+    return answer == 'y'
+
+
+def _cmd_upgrade(args):
+    """Invoke kops to upgrade cluster to latest Kubernetes version."""
+    _run_kops([
+        'upgrade', 'cluster', args.cluster,
+    ], args)
+    if _get_user_confirmation('Proceed with cluster upgrade?'):
+        _run_kops([
+            'upgrade', 'cluster', args.cluster, '--yes',
+        ], args)
+        _run_kops([
+            'update', 'cluster', args.cluster, '--yes'
+        ], args)
+        _run_kops([
+            'rolling-update', 'cluster', args.cluster, '--yes',
+        ], args)
+
+
+def _cmd_get(args):
+    """Invoke kops to display resources."""
+    _run_kops([
+        'get', args.command,
+    ], args)
+
+
+def _cmd_export_kubecfg(args):
+    """Invoke kops to export kubeconfig."""
+    _export_kubecfg(args.cluster, args.domain, args)
+
+
+def _export_kubecfg(cluster, domain, args):
+    filename = '{}.kubeconfig'.format(cluster)
+    _run_kops([
+        'export', 'kubecfg', '{}.{}'.format(cluster, domain),
+    ], args, env={'KUBECONFIG': filename, })
+    _info('Kubeconfig written to {}'.format(filename))
+    return filename
+
+
+def _run_kops(
+    args, cl_args, ignore_dry_run=False, get_output=False, env={},
+):
+    command = [
+        'kops', '--state', 's3://{}'.format(cl_args.state_bucket),
+    ] + args
+    _info(' '.join(command))
+    merged_env = {**{
+        'AWS_PROFILE': cl_args.aws_profile,
+    }, **env}
+    if ignore_dry_run or not cl_args.dry_run:
+        if get_output:
+            proc = subprocess.Popen(
+                command, env={**os.environ, **merged_env},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            stdout, stderr = [x.decode().strip() for x in proc.communicate()]
+            if proc.returncode != 0:
+                sys.stderr.write('{}\n'.format(stderr))
+        else:
+            proc = subprocess.Popen(
+                command, env={**os.environ, **merged_env}
+            )
+            proc.wait()
+        if proc.returncode != 0:
+            _error('kops failed with code {}'.format(proc.returncode))
+        if get_output:
+            return stdout
+    else:
+        pass
+
+
+def _cmd_generate_addons(args):
+    """Generate addon manifests."""
+    _generate_addons(args)
+
+
+def _add_alerting_args(cl_parser):
+    cl_parser.add_argument(
+        'email_recipient', help='Specify recipient email address for alerts',
+    )
+    cl_parser.add_argument(
+        'smtp_host', help='Specify SMTP host for sending alerts',
+    )
+
+
+def _add_domain_arg(cl_parser):
+    cl_parser.add_argument(
+        'domain', help='Specify application domain name'
+    )
+
+
+def _add_state_bucket_arg(cl_parser):
+    cl_parser.add_argument(
+        'state_bucket', help='Specify kops state S3 bucket'
+    )
+
+
+_cl_parser = argparse.ArgumentParser(
+    description='Wrapper script for invoking kops with opinionated stack'
+)
+_cl_parser.add_argument(
+    '--dry_run', default=False, action='store_true',
+    help='Simulate kops operations')
+_cl_parser.add_argument(
+    '--aws_profile', help='Specify AWS profile [default: %(default)s]',
+    default='default'
+)
+_subparsers = _cl_parser.add_subparsers(title='subcommands')
+
+_cl_parser_create = _subparsers.add_parser('create', help='Create a cluster')
+_cl_parser_create.add_argument('name', help='Specify cluster name')
+_cl_parser_create.add_argument('category', help='Specify cluster category')
+_add_alerting_args(_cl_parser_create)
+_add_domain_arg(_cl_parser_create)
+_add_state_bucket_arg(_cl_parser_create)
+_cl_parser_create.set_defaults(func=_cmd_create)
+
+_cl_parser_delete = _subparsers.add_parser('delete', help='Delete a cluster')
+_cl_parser_delete.add_argument('cluster', help='Specify cluster to delete')
+_add_state_bucket_arg(_cl_parser_delete)
+_cl_parser_delete.set_defaults(func=_cmd_delete)
+
+_cl_parser_upgrade = _subparsers.add_parser(
+    'upgrade', help='Upgrade a cluster to latest Kubernetes version'
+)
+_cl_parser_upgrade.add_argument('cluster', help='Specify cluster to upgrade')
+_add_state_bucket_arg(_cl_parser_upgrade)
+_cl_parser_upgrade.set_defaults(func=_cmd_upgrade)
+
+_cl_parser_get = _subparsers.add_parser(
+    'get', help='Display resources'
+)
+_cl_parser_get.add_argument(
+    'command', choices=['clusters', ], help='Specify what to display'
+)
+_add_state_bucket_arg(_cl_parser_get)
+_cl_parser_get.set_defaults(func=_cmd_get)
+
+_cl_parser_export_kubecfg = _subparsers.add_parser(
+    'export_kubecfg', help='Export kubeconfig for a certain cluster'
+)
+_cl_parser_export_kubecfg.add_argument(
+    'cluster', help='Specify cluster'
+)
+_add_state_bucket_arg(_cl_parser_export_kubecfg)
+_add_domain_arg(_cl_parser_export_kubecfg)
+_cl_parser_export_kubecfg.set_defaults(func=_cmd_export_kubecfg)
+
+_cl_parser_generate_addons = _subparsers.add_parser(
+    'generate_addons', help='Generate addon manifests'
+)
+_add_alerting_args(_cl_parser_generate_addons)
+_add_domain_arg(_cl_parser_generate_addons)
+_cl_parser_generate_addons.set_defaults(func=_cmd_generate_addons)
+
+_args = _cl_parser.parse_args()
+if _args.dry_run:
+    _info('In dry run mode - simulating actions')
+_args.func(_args)

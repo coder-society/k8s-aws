@@ -1,0 +1,7 @@
+*.crt
+*.key
+id_rsa*
+*.kubeconfig
+*-secret.yaml
+secrets.yaml
+/addons/prometheus/alertmanager/alertmanager-config.yaml
