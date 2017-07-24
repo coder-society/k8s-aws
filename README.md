@@ -28,3 +28,9 @@ Example:
 ```
 ./kops --aws_profile example create app staging contact@example.com email-smtp.eu-west-1.amazonaws.com:587 example.com clusters.example.com
 ```
+
+## Logging
+### Kibana
+In order to access Kibana, start `kubectl --kubeconfig $KUBECONFIG proxy 8001` and open
+http://localhost:8001/api/v1/proxy/namespaces/kube-system/services/kibana-logging in your browser.
+The username/password is elastic/changeme.
