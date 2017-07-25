@@ -286,10 +286,9 @@ def _cmd_create(args):
             'create', 'cluster', '--zones', zones, '--master-zones', zones,
             '--topology', 'private', '--networking', 'flannel',
             '--master-size', 'm4.large', '--node-size', 'm4.large',
-            '--node-count', '3', '--bastion', '--cloud', 'aws',
+            '--node-count', args.worker_count, '--bastion', '--cloud', 'aws',
             '--ssh-public-key', pub_key_path, '--authorization', 'RBAC',
-            '--yes',
-            full_cluster_name,
+            '--yes', full_cluster_name,
         ], args)
         if not args.dry_run:
             kubecfg_path = _export_kubecfg(
@@ -455,6 +454,10 @@ _subparsers = _cl_parser.add_subparsers(title='subcommands')
 _cl_parser_create = _subparsers.add_parser('create', help='Create a cluster')
 _cl_parser_create.add_argument('name', help='Specify cluster name')
 _cl_parser_create.add_argument('category', help='Specify cluster category')
+_cl_parser_create.add_argument(
+    '--worker_count', help='Specify number of workers [default: %(worker)s]',
+    default='3'
+)
 _add_alerting_args(_cl_parser_create)
 _add_domain_arg(_cl_parser_create)
 _add_state_bucket_arg(_cl_parser_create)
