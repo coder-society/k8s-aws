@@ -1,0 +1,29 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: es-curator
+  namespace: kube-system
+  labels:
+    k8s-app: es-curator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: es-curator
+  template:
+    metadata:
+      labels:
+        k8s-app: es-curator
+    spec:
+      containers:
+      - name: es-curator
+        image: aknudsen/es-curator-service:5.1.1-1
+        imagePullPolicy: Always
+        args: ["--config", "/etc/config/config.yml", "/etc/config/action_file.yml"]
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/config
+      volumes:
+        - name: config-volume
+          secret:
+            secretName: curator-config
