@@ -60,7 +60,6 @@ spec:
       initContainers:
       - image: aknudsen/elasticsearch-k8s-init:1.0.0
         name: elasticsearch-logging-init
-        imagePullPolicy: Always
         securityContext:
           privileged: true
   volumeClaimTemplates:
