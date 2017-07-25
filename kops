@@ -199,6 +199,7 @@ def _install_addons(kubecfg_path, args):
     install_addon('kube-flannel-rbac.yaml')
     install_addon('heapster.yaml')
     install_addon('kube-dashboard.yaml')
+    install_addon('storageclasses.yaml')
     install_addon('logging/')
     _install_prometheus(kubecfg_path)
 

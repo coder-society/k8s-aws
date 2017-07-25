@@ -57,12 +57,18 @@ spec:
             secretKeyRef:
               name: bootstrap-environment
               key: es-s3-secret-key
+      initContainers:
+      - image: aknudsen/elasticsearch-k8s-init:1.0.0
+        name: elasticsearch-logging-init
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
   volumeClaimTemplates:
   - metadata:
       name: elasticsearch-logging
     spec:
-      storageClassName: gp2
       accessModes: ["ReadWriteOnce"]
+      storageClassName: platinum
       resources:
         requests:
-          storage: 20Gi
+          storage: 1Ti
