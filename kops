@@ -336,6 +336,7 @@ def _cmd_create(args):
             '--topology', 'private', '--networking', 'flannel',
             '--master-size', 'm4.large', '--node-size', 'm4.large',
             '--node-count', args.worker_count, '--bastion', '--cloud', 'aws',
+            '--master-size', args.master_size, '--node-size', args.worker_size,
             '--ssh-public-key', pub_key_path, '--authorization', 'RBAC',
             '--yes', full_cluster_name,
         ], args)
@@ -504,8 +505,18 @@ _cl_parser_create = _subparsers.add_parser('create', help='Create a cluster')
 _cl_parser_create.add_argument('name', help='Specify cluster name')
 _cl_parser_create.add_argument('category', help='Specify cluster category')
 _cl_parser_create.add_argument(
-    '--worker_count', help='Specify number of workers [default: %(worker)s]',
+    '--worker_count', help='Specify number of workers [default: %(default)s]',
     default='3'
+)
+_cl_parser_create.add_argument(
+    '--master_size',
+    help='Specify master root volume size in GBs [default: %(default)s]',
+    default='64'
+)
+_cl_parser_create.add_argument(
+    '--worker_size',
+    help='Specify worker root volume size in GBs [default: %(default)s]',
+    default='128'
 )
 _add_alerting_args(_cl_parser_create)
 _add_domain_arg(_cl_parser_create)
