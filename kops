@@ -334,7 +334,6 @@ def _cmd_create(args):
         _run_kops([
             'create', 'cluster', '--zones', zones, '--master-zones', zones,
             '--topology', 'private', '--networking', 'flannel',
-            '--master-size', 'm4.large', '--node-size', 'm4.large',
             '--node-count', args.worker_count, '--bastion', '--cloud', 'aws',
             '--master-volume-size', args.master_volume_size,
             '--node-volume-size', args.worker_volume_size,
@@ -512,12 +511,12 @@ _cl_parser_create.add_argument(
 _cl_parser_create.add_argument(
     '--master_volume_size',
     help='Specify master root volume size in GBs [default: %(default)s]',
-    default='64'
+    default='m4.large'
 )
 _cl_parser_create.add_argument(
     '--worker_volume_size',
     help='Specify worker root volume size in GBs [default: %(default)s]',
-    default='128'
+    default='m4.large'
 )
 _add_alerting_args(_cl_parser_create)
 _add_domain_arg(_cl_parser_create)
