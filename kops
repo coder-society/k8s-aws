@@ -336,7 +336,8 @@ def _cmd_create(args):
             '--topology', 'private', '--networking', 'flannel',
             '--master-size', 'm4.large', '--node-size', 'm4.large',
             '--node-count', args.worker_count, '--bastion', '--cloud', 'aws',
-            '--master-size', args.master_size, '--node-size', args.worker_size,
+            '--master-volume-size', args.master_volume_size,
+            '--node-volume-size', args.worker_volume_size,
             '--ssh-public-key', pub_key_path, '--authorization', 'RBAC',
             '--yes', full_cluster_name,
         ], args)
@@ -509,12 +510,12 @@ _cl_parser_create.add_argument(
     default='3'
 )
 _cl_parser_create.add_argument(
-    '--master_size',
+    '--master_volume_size',
     help='Specify master root volume size in GBs [default: %(default)s]',
     default='64'
 )
 _cl_parser_create.add_argument(
-    '--worker_size',
+    '--worker_volume_size',
     help='Specify worker root volume size in GBs [default: %(default)s]',
     default='128'
 )
