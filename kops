@@ -293,38 +293,28 @@ def _wait_for_cluster(kubecfg_path):
 
 def _cmd_create(args):
     """Invoke kops to create cluster."""
-    # Determine cluster name based on date and unique suffix if necessary
-    cluster_name = '{}.{}'.format(args.category, args.name)
-    re_cluster = re.compile(r'{}-(\d+)'.format(cluster_name), re.I)
+    cluster_name = '{}'.format(args.name)
+    full_cluster_name = '{}.{}'.format(
+        cluster_name, args.domain
+    )
     existing_clusters = _run_kops(
         ['get', 'clusters'], args, ignore_dry_run=True, get_output=True
     ).splitlines()
     conflicting_clusters = [
-        c for c in existing_clusters if c.startswith(cluster_name)
+        c for c in existing_clusters if c.startswith(full_cluster_name)
     ]
-    cluster_numbers = []
-    for cluster in conflicting_clusters:
-        m = re_cluster.match(cluster)
-        cluster_numbers.append(int(m.group(1)))
-    cluster_numbers = sorted(cluster_numbers)
-    for cluster_number in range(1, 100):
-        if cluster_number not in cluster_numbers:
-            break
-    else:
-        _error('Couldn\'t determine a unique cluster name')
+    if len(conflicting_clusters) > 0:
+        _error('Cluster name is already in use')
 
     # Use three availability zones and one master for each in order to obtain
     # high availability
     zones = 'eu-central-1a,eu-central-1b,eu-central-1c'
-    full_cluster_name = '{}-{}.{}'.format(
-        cluster_name, cluster_number, args.domain
-    )
     if _get_user_confirmation(
         'Create cluster {} with AWS profile {}?'
         .format(full_cluster_name, args.aws_profile)
     ):
         pub_key_path, priv_key_path = _get_key_pair(
-            '{}-{}'.format(cluster_name, cluster_number)
+            '{}'.format(cluster_name)
         )
         _info('Creating cluster \'{}\'...'.format(full_cluster_name))
         # TODO: Figure out how to enable certificate based auth for API server:
@@ -343,7 +333,7 @@ def _cmd_create(args):
         ], args)
         if not args.dry_run:
             kubecfg_path = _export_kubecfg(
-                '{}-{}'.format(cluster_name, cluster_number), args.domain, args
+                '{}'.format(cluster_name), args.domain, args
             )
             _install_addons(kubecfg_path, args)
             # Label the nodes as being ready for Fluentd DaemonSet
@@ -504,7 +494,6 @@ _subparsers = _cl_parser.add_subparsers(title='subcommands')
 
 _cl_parser_create = _subparsers.add_parser('create', help='Create a cluster')
 _cl_parser_create.add_argument('name', help='Specify cluster name')
-_cl_parser_create.add_argument('category', help='Specify cluster category')
 _cl_parser_create.add_argument(
     '--worker_count', help='Specify number of workers [default: %(default)s]',
     default='3'
