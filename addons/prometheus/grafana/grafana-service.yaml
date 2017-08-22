@@ -8,8 +8,8 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - name: web
-    port: 3000
+  - port: 3000
+    targetPort: web
     protocol: TCP
     nodePort: 30902
   selector:

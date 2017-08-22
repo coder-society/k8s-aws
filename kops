@@ -293,7 +293,6 @@ def _wait_for_cluster(kubecfg_path):
 
 def _cmd_create(args):
     """Invoke kops to create cluster."""
-    # Determine cluster name based on date and unique suffix if necessary
     cluster_name = '{}.{}'.format(args.category, args.name)
     re_cluster = re.compile(r'{}-(\d+)'.format(cluster_name), re.I)
     existing_clusters = _run_kops(
