@@ -30,8 +30,8 @@ spec:
             secretKeyRef:
               name: grafana-credentials
               key: password
-        - name: "GF_SERVER_ROOT_URL"
-          value: "/api/v1/proxy/namespaces/monitoring/services/grafana"
+        - name: GF_SERVER_ROOT_URL
+          value: /api/v1/proxy/namespaces/monitoring/services/grafana
         volumeMounts:
         - name: grafana-storage
           mountPath: /var/grafana-storage
