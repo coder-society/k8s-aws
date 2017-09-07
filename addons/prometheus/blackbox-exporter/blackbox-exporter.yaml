@@ -19,7 +19,7 @@ spec:
       serviceAccountName: blackbox-exporter
       containers:
       - name: blackbox-exporter
-        image: quay.io/coreos/blackbox-exporter:v0.8.1
+        image: quay.io/prometheus/blackbox-exporter:v0.8.1
         args: [--config.file=/etc/config/blackbox.yaml]
         ports:
         - name: metrics
