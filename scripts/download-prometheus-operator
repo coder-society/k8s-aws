@@ -25,7 +25,7 @@ def _download_manifests(args):
             'alertmanager',
         ]:
             with closing(requests.get(
-                '{}/{}?ref=v{}'.format(manifests_url, dname, args.version)
+                '{}/{}?ref={}'.format(manifests_url, dname, args.version)
             )) as r:
                 r.raise_for_status()
                 os.makedirs(dname)
@@ -38,7 +38,7 @@ def _download_manifests(args):
         os.chdir(orig_dir)
 
         tgt_dir = os.path.join(
-            orig_dir, 'addons', 'prometheus', 'v{}'.format(args.version)
+            orig_dir, 'addons', 'prometheus', '{}'.format(args.version)
         )
         if os.path.exists(tgt_dir):
             shutil.rmtree(tgt_dir)

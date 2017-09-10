@@ -1,13 +1,13 @@
-apiVersion: monitoring.coreos.com/v1alpha1
+apiVersion: monitoring.coreos.com/v1
 kind: Prometheus
 metadata:
   name: k8s
-  namespace: monitoring
   labels:
     prometheus: k8s
 spec:
   replicas: 2
   version: v1.7.0
+  externalUrl: http://127.0.0.1:8001/api/v1/proxy/namespaces/monitoring/services/prometheus-k8s:web/
   serviceAccountName: prometheus-k8s
   serviceMonitorSelector:
     matchExpressions:
