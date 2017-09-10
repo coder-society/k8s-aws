@@ -34,3 +34,20 @@ Example:
 In order to access Kibana, start `kubectl --kubeconfig $KUBECONFIG proxy 8001` and open
 http://localhost:8001/api/v1/proxy/namespaces/kube-system/services/kibana-logging in your browser.
 The username/password is elastic/changeme.
+
+## Monitoring
+We use Prometheus, via CoreOS'
+[Prometheus Operator](https://github.com/coreos/prometheus-operator), as our monitoring solution.
+In addition to Prometheus Operator itself, we install the whole
+[kube-prometheus](https://github.com/coreos/prometheus-operator/tree/master/contrib/kube-prometheus)
+stack that among other things ensures that the Kubernetes cluster itself and the host
+infrastructure are monitored.
+
+### Upgrading to New Version
+When upgrading to a newer version of the Prometheus Operator stack, we need to first upgrade
+Prometheus Operator itself (by applying its manifests). Once this is ready, we can apply the
+manifests for the rest of the stack. Prometheus Operator will take care of upgrading corresponding
+components in the cluster.
+
+### Visualization
+We use Grafana for visualizing monitoring information.
