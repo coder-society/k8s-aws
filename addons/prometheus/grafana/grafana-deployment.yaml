@@ -19,16 +19,8 @@ spec:
           value: "true"
         - name: GF_AUTH_ANONYMOUS_ENABLED
           value: "true"
-        - name: GF_SECURITY_ADMIN_USER
-          valueFrom:
-            secretKeyRef:
-              name: grafana-credentials
-              key: user
-        - name: GF_SECURITY_ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: grafana-credentials
-              key: password
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: "Admin"
         - name: GF_SERVER_ROOT_URL
           value: /api/v1/proxy/namespaces/monitoring/services/grafana
         volumeMounts:
