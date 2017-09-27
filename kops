@@ -70,10 +70,11 @@ def _get_key_pair(cluster_name):
 def _install_prometheus(kubecfg_path):
     """Install Prometheus Operator and associated stack."""
     def apply_manifests(path, ignore=[]):
+        dpath = os.path.join('addons/prometheus', path)
         if not ignore:
             subprocess.check_call([
                 'kubectl', '--kubeconfig', kubecfg_path, '-n', 'monitoring',
-                'apply', '-f', 'addons/prometheus/{}'.format(path),
+                'apply', '-f', dpath,
             ])
         else:
             for fname in os.listdir(path):
@@ -81,7 +82,7 @@ def _install_prometheus(kubecfg_path):
                     subprocess.check_call([
                         'kubectl', '--kubeconfig', kubecfg_path, '-n',
                         'monitoring', 'apply', '-f',
-                        os.path.join('addons/prometheus', path, fname),
+                        os.path.join(dpath, fname),
                     ])
 
     _info('Installing Prometheus Operator...')
