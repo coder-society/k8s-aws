@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+import subprocess
+import sys
+import argparse
+import os.path
+from datetime import datetime
+import re
+import time
+from base64 import b64encode
+from cryptography.hazmat.primitives import serialization as \
+    crypto_serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.backends import default_backend as \
+    crypto_default_backend
+import jinja2
+import yaml
+
+
+_TODAY = datetime.utcnow().date()
+
+
+def _info(msg):
+    sys.stdout.write('* {}\n'.format(msg))
+    sys.stdout.flush()
+
+
+def _install_prometheus(kubecfg_path):
+    """Install Prometheus Operator and associated stack."""
+    def apply_manifests(path, ignore=[], namespace='monitoring'):
+        dpath = os.path.join('addons/prometheus', path)
+        if not ignore:
+            command = [
+                'kubectl', '--kubeconfig', kubecfg_path,
+                'apply', '-f', dpath,
+            ]
+            if namespace:
+                command.extend(['-n', namespace])
+            subprocess.check_call(command)
+        else:
+            for fname in os.listdir(dpath):
+                if not os.path.isdir(fname) and fname not in ignore:
+                    command = [
+                        'kubectl', '--kubeconfig', kubecfg_path,
+                        'apply', '-f', os.path.join(dpath, fname),
+                    ]
+                    if namespace:
+                        command.extend(['-n', namespace])
+                    subprocess.check_call(command)
+
+    _info('Installing Prometheus Operator...')
+    proc = subprocess.Popen([
+        'kubectl', '--kubeconfig', kubecfg_path, 'get', 'namespace',
+        'monitoring',
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc.communicate()
+    if proc.returncode != 0:
+        subprocess.check_call([
+            'kubectl', '--kubeconfig', kubecfg_path, 'create', 'namespace',
+            'monitoring',
+        ])
+    # If we upgrade Prometheus Operator to a new version, it will take care
+    # of upgrading CRDs corresponding to manifests we apply later
+    apply_manifests('prometheus-operator/')
+    # Wait for CRDs to become ready
+    for crd in ('servicemonitor', 'prometheus', 'alertmanager'):
+        while True:
+            try:
+                subprocess.check_call([
+                    'kubectl', '--kubeconfig', kubecfg_path,
+                    '-n', 'monitoring', 'get', '{}.monitoring.coreos.com'.format(crd),
+                ])
+            except subprocess.CalledProcessError:
+                time.sleep(5)
+                continue
+            else:
+                break
+
+    for path in [
+        'node-exporter/', 'kube-state-metrics/',
+        'grafana/grafana-credentials.yaml', 'grafana/'
+    ]:
+        apply_manifests(path)
+
+    apply_manifests('prometheus/', ignore=[
+        'prometheus-k8s-roles.yaml', 'prometheus-k8s-role-bindings.yaml',
+    ])
+    apply_manifests('prometheus/prometheus-k8s-roles.yaml', namespace=None)
+    apply_manifests('prometheus/prometheus-k8s-role-bindings.yaml', namespace=None)
+    apply_manifests('alertmanager/')
+
+
+def _write_secret(fpath, name, namespace, data):
+    data_encoded = {}
+    for k, v in data.items():
+        data_encoded[k] = b64encode(v.encode()).decode()
+
+    if not os.path.exists(os.path.dirname(fpath)):
+        os.makedirs(os.path.dirname(fpath))
+    secret = {
+        'apiVersion': 'v1',
+        'type': 'Opaque',
+        'kind': 'Secret',
+        'metadata': {
+            'name': name,
+            'namespace': namespace,
+        },
+        'data': data_encoded,
+    }
+    with open(fpath, 'wt') as f:
+        f.write(yaml.dump(secret, default_flow_style=False) + '\n')
+
+
+def _generate_addons(args):
+    """Generate addon manifests."""
+    jinja_env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(searchpath='assets'),
+        undefined=jinja2.StrictUndefined
+    )
+    template = jinja_env.get_template('alertmanager-config.yaml')
+    with open('secrets.yaml', 'rt') as f:
+        secrets_env = yaml.load(f)
+    logging_secrets = secrets_env['logging']
+    assert args.domain is not None
+    assert args.email_recipient is not None
+    assert args.smtp_host is not None
+    template_env = {**{
+        'domain': args.domain,
+        'alertsEmailRecipient': args.email_recipient,
+        'smtpHost': args.smtp_host,
+    }, **secrets_env['alertmanager']}
+    alertmanager_config = template.render(template_env)
+
+    _write_secret(
+        'addons/prometheus/alertmanager/alertmanager-config.yaml',
+        'alertmanager-main', 'monitoring', {
+            'alertmanager.yaml': alertmanager_config,
+        }
+    )
+
+
+def _main(args):
+    """Install addons into cluster."""
+    def install_addon(name):
+        _info('Installing addon {}...'.format(name))
+        subprocess.check_call([
+            'kubectl', '--kubeconfig', args.kubecfg_path, 'apply', '-f',
+            'addons/{}'.format(name),
+        ])
+
+    _generate_addons(args)
+    _install_prometheus(args.kubecfg_path)
+
+
+_cl_parser = argparse.ArgumentParser(
+    description='Script for installing the prometheus operator stack'
+)
+
+_cl_parser.add_argument('kubecfg_path')
+_cl_parser.add_argument('email_recipient')
+_cl_parser.add_argument('smtp_host')
+_cl_parser.add_argument('domain')
+
+_args = _cl_parser.parse_args()
+
+_main(_args)
