@@ -6,7 +6,7 @@ metadata:
     prometheus: k8s
 spec:
   replicas: 2
-  version: v1.7.0
+  version: v1.7.1
   externalUrl: http://127.0.0.1:8001/api/v1/proxy/namespaces/monitoring/services/prometheus-k8s:web/
   serviceAccountName: prometheus-k8s
   serviceMonitorSelector:
