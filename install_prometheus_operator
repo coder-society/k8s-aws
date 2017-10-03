@@ -67,7 +67,8 @@ def _install_prometheus(kubecfg_path):
             try:
                 subprocess.check_call([
                     'kubectl', '--kubeconfig', kubecfg_path,
-                    '-n', 'monitoring', 'get', '{}.monitoring.coreos.com'.format(crd),
+                    '-n', 'monitoring', 'get',
+                    '{}.monitoring.coreos.com'.format(crd),
                 ])
             except subprocess.CalledProcessError:
                 time.sleep(5)
@@ -85,7 +86,9 @@ def _install_prometheus(kubecfg_path):
         'prometheus-k8s-roles.yaml', 'prometheus-k8s-role-bindings.yaml',
     ])
     apply_manifests('prometheus/prometheus-k8s-roles.yaml', namespace=None)
-    apply_manifests('prometheus/prometheus-k8s-role-bindings.yaml', namespace=None)
+    apply_manifests(
+        'prometheus/prometheus-k8s-role-bindings.yaml', namespace=None
+    )
     apply_manifests('alertmanager/')
 
 
@@ -139,16 +142,10 @@ def _generate_addons(args):
 
 
 def _main(args):
-    """Install addons into cluster."""
-    def install_addon(name):
-        _info('Installing addon {}...'.format(name))
-        subprocess.check_call([
-            'kubectl', '--kubeconfig', args.kubecfg_path, 'apply', '-f',
-            'addons/{}'.format(name),
-        ])
-
+    kubecfg_path = os.path.abspath(args.kubecfg_path)
+    os.chdir(os.path.abspath(os.path.dirname(__file__)))
     _generate_addons(args)
-    _install_prometheus(args.kubecfg_path)
+    _install_prometheus(kubecfg_path)
 
 
 _cl_parser = argparse.ArgumentParser(
