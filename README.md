@@ -3,7 +3,7 @@ This is a kops wrapper script for creating Kubernetes clusters on AWS and mainta
 Certain addons are also installed into newly created clusters:
 
 * Heapster
-* Kube-Dashboard
+* Kubernetes Dashboard
 * Elasticsearch/Fluentd/Kibana (EFK) logging stack
 * [Prometheus Operator](https://github.com/coreos/prometheus-operator) monitoring stack
 
@@ -43,7 +43,7 @@ In addition to Prometheus Operator itself, we install the whole
 stack that among other things ensures that the Kubernetes cluster itself and the host
 infrastructure are monitored.
 
-### Upgrading to New Version
+### Upgrading to a New Version
 When upgrading to a newer version of the Prometheus Operator stack, we need to first upgrade
 Prometheus Operator itself (by applying its manifests). Once this is ready, we can apply the
 manifests for the rest of the stack. Prometheus Operator will take care of upgrading corresponding
