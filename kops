@@ -67,64 +67,12 @@ def _get_key_pair(cluster_name):
     return pub_key_path, priv_key_path
 
 
-def _install_prometheus(kubecfg_path):
+def _install_prometheus(kubecfg_path, args):
     """Install Prometheus Operator and associated stack."""
-    def apply_manifests(path, ignore=[]):
-        dpath = os.path.join('addons/prometheus', path)
-        if not ignore:
-            subprocess.check_call([
-                'kubectl', '--kubeconfig', kubecfg_path, '-n', 'monitoring',
-                'apply', '-f', dpath,
-            ])
-        else:
-            for fname in os.listdir(path):
-                if not os.path.isdir(fname) and fname not in ignore:
-                    subprocess.check_call([
-                        'kubectl', '--kubeconfig', kubecfg_path, '-n',
-                        'monitoring', 'apply', '-f',
-                        os.path.join(dpath, fname),
-                    ])
-
-    _info('Installing Prometheus Operator...')
-    proc = subprocess.Popen([
-        'kubectl', '--kubeconfig', kubecfg_path, 'get', 'namespace',
-        'monitoring',
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    proc.communicate()
-    if proc.returncode != 0:
-        subprocess.check_call([
-            'kubectl', '--kubeconfig', kubecfg_path, 'create', 'namespace',
-            'monitoring',
-        ])
-    # If we upgrade Prometheus Operator to a new version, it will take care
-    # of upgrading CRDs corresponding to manifests we apply later
-    apply_manifests('prometheus-operator/')
-    # Wait for CRDs to become ready
-    for crd in ('servicemonitor', 'prometheus', 'alertmanager'):
-        while True:
-            try:
-                subprocess.check_call([
-                    'kubectl', '--kubeconfig', kubecfg_path,
-                    '-n', 'monitoring', 'get', crd,
-                ])
-            except subprocess.CalledProcessError:
-                time.sleep(5)
-                continue
-            else:
-                break
-
-    for path in [
-        'node-exporter/', 'kube-state-metrics/',
-        'grafana/grafana-credentials.yaml', 'grafana/'
-    ]:
-        apply_manifests(path)
-
-    apply_manifests('prometheus/', ignore=[
-        'prometheus-k8s-roles.yaml', 'prometheus-k8s-role-bindings.yaml',
+    subprocess.check_call([
+        './install_prometheus_operator', kubecfg_path, args.email_recipient,
+        args.smtp_host, args.domain,
     ])
-    apply_manifests('prometheus/prometheus-k8s-roles.yaml')
-    apply_manifests('prometheus/prometheus-k8s-role-bindings.yaml')
-    apply_manifests('alertmanager/')
 
 
 def _b64_encode_secrets(key2val):
@@ -262,12 +210,11 @@ def _install_addons(kubecfg_path, args):
         else:
             break
 
-    install_addon('kube-flannel-rbac.yaml')
     install_addon('heapster.yaml')
     install_addon('kube-dashboard.yaml')
     install_addon('storageclasses.yaml')
     install_addon('logging/')
-    _install_prometheus(kubecfg_path)
+    _install_prometheus(kubecfg_path, args)
 
     while True:
         proc = subprocess.Popen([
