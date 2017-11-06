@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
       - name: es-curator
-        image: aknudsen/es-curator-service:5.1.1-2
-        imagePullPolicy: Always
+        image: aknudsen/es-curator-service:5.3.0-1
+        imagePullPolicy: IfNotPresent
         args: ["--config", "/etc/config/config.yml", "/etc/config/action_file.yml"]
         volumeMounts:
           - name: config-volume
