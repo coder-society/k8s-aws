@@ -117,7 +117,6 @@ spec:
       name: elasticsearch-logging
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: platinum
       resources:
         requests:
-          storage: 1Ti
+          storage: 20Gi
