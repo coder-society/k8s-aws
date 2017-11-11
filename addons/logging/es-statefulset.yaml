@@ -73,7 +73,7 @@ spec:
     spec:
       serviceAccountName: elasticsearch-logging
       containers:
-      - image: aknudsen/elasticsearch-k8s:5.6.2
+      - image: gcr.io/google-containers/elasticsearch:v5.6.2
         name: elasticsearch-logging
         resources:
           # need more cpu upon initialization, therefore burstable class
@@ -96,16 +96,6 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: bootstrap-environment
-              key: es-s3-access-key
-        - name: AWS_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: bootstrap-environment
-              key: es-s3-secret-key
       initContainers:
       - image: alpine:3.6
         command: ["/sbin/sysctl", "-w", "vm.max_map_count=262144"]
