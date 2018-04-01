@@ -1,12 +1,13 @@
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: RoleBinding
 metadata:
-  name: kube-state-metrics
+  name: metrics-server-auth-reader
+  namespace: kube-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: kube-state-metrics-resizer
+  name: extension-apiserver-authentication-reader
 subjects:
 - kind: ServiceAccount
-  name: kube-state-metrics
-
+  name: metrics-server
+  namespace: kube-system

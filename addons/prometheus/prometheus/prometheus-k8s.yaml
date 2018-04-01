@@ -6,29 +6,22 @@ metadata:
     prometheus: k8s
 spec:
   replicas: 2
-  version: v1.7.1
-  externalUrl: http://127.0.0.1:8001/api/v1/proxy/namespaces/monitoring/services/prometheus-k8s:web/
+  version: v2.2.1
   serviceAccountName: prometheus-k8s
   serviceMonitorSelector:
     matchExpressions:
     - {key: k8s-app, operator: Exists}
   ruleSelector:
     matchLabels:
-      role: prometheus-rulefiles
+      role: alert-rules
       prometheus: k8s
   resources:
     requests:
-      memory: 2Gi
-  storage:
-    volumeClaimTemplate:
-      metadata:
-        name: prometheus
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        storageClassName: platinum
-        resources:
-          requests:
-            storage: 1Ti
+      # 2Gi is default, but won't schedule if you don't have a node with >2Gi
+      # memory. Modify based on your target and time-series count for
+      # production use. This value is mainly meant for demonstration/testing
+      # purposes.
+      memory: 400Mi
   alerting:
     alertmanagers:
     - namespace: monitoring
