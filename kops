@@ -140,6 +140,8 @@ def _generate_addons(args):
         }
     )
 
+    curator_secrets = secrets_env['curator']
+
     _write_secret(
         'addons/logging/es-curator-secret.yaml', 'curator-config',
         'kube-system', {
@@ -176,7 +178,7 @@ client:
   client_cert:
   client_key:
   ssl_no_validate: False
-  http_auth: {}:{}
+  http_auth: {}{}{}
   timeout: 30
   master_only: False
 logging:
@@ -184,7 +186,7 @@ logging:
   logfile:
   logformat: default
   blacklist: ['elasticsearch', 'urllib3']
-""".format(logging_secrets['esUsername'], logging_secrets['esPassword'])
+""" .format(curator_secrets['esUsername'], ':' if curator_secrets["authentication"] else None, curator_secrets['esPassword'])
         },
     )
 
@@ -208,13 +210,19 @@ def _install_addons(kubecfg_path, args):
             _info('Waiting for cluster to become ready...')
             time.sleep(5)
         else:
+            time.sleep(5)
             break
 
     install_addon('heapster.yaml')
+    time.sleep(5)
     install_addon('kube-dashboard.yaml')
+    time.sleep(5)
     install_addon('storageclasses.yaml')
+    time.sleep(5)
     install_addon('logging/')
+    time.sleep(15)
     _install_prometheus(kubecfg_path, args)
+    time.sleep(15)
 
     while True:
         proc = subprocess.Popen([
@@ -255,14 +263,17 @@ def _wait_for_cluster(kubecfg_path):
         else:
             break
 
-
-def _cmd_create(args):
-    """Invoke kops to create cluster."""
-    cluster_name = '{}.{}'.format(args.category, args.name)
+def _check_existing_cluster(args, cluster_name):
+    """Find out if a cluster with the same name exists and if so, asign a number to make it different"""
     re_cluster = re.compile(r'{}-(\d+)'.format(cluster_name), re.I)
     existing_clusters = _run_kops(
-        ['get', 'clusters'], args, ignore_dry_run=True, get_output=True
-    ).splitlines()
+        ['get', 'clusters'], args, ignore_dry_run=True, get_output=True, tolerate_error=True
+    )
+
+    if existing_clusters is None:
+        return 0
+
+    existing_clusters.splitlines()
     conflicting_clusters = [
         c for c in existing_clusters if c.startswith(cluster_name)
     ]
@@ -273,13 +284,19 @@ def _cmd_create(args):
     cluster_numbers = sorted(cluster_numbers)
     for cluster_number in range(1, 100):
         if cluster_number not in cluster_numbers:
-            break
+            return cluster_number
     else:
         _error('Couldn\'t determine a unique cluster name')
 
+def _cmd_create(args):
+    """Invoke kops to create cluster."""
+    cluster_name = '{}.{}'.format(args.category, args.name)
+
+    cluster_number =_check_existing_cluster(args, cluster_name)
+
     # Use three availability zones and one master for each in order to obtain
     # high availability
-    zones = 'eu-central-1a,eu-central-1b,eu-central-1c'
+    zones = 'us-west-2a,us-west-2b,us-west-2c'
     full_cluster_name = '{}-{}.{}'.format(
         cluster_name, cluster_number, args.domain
     )
@@ -298,7 +315,7 @@ def _cmd_create(args):
         _run_kops([
             'create', 'cluster', '--zones', zones, '--master-zones', zones,
             '--topology', 'private', '--networking', 'flannel',
-            '--master-size', 'm4.large', '--node-size', 'm4.large',
+            '--master-size', 't2.medium', '--node-size', 't2.medium',
             '--node-count', args.worker_count, '--bastion', '--cloud', 'aws',
             '--master-volume-size', args.master_volume_size,
             '--node-volume-size', args.worker_volume_size,
@@ -397,7 +414,7 @@ def _export_kubecfg(cluster, domain, args):
 
 
 def _run_kops(
-    args, cl_args, ignore_dry_run=False, get_output=False, env={},
+    args, cl_args, ignore_dry_run=False, get_output=False, tolerate_error=False, env={},
 ):
     command = [
         'kops', '--state', 's3://{}'.format(cl_args.state_bucket),
@@ -420,10 +437,10 @@ def _run_kops(
                 command, env={**os.environ, **merged_env}
             )
             proc.wait()
-        if proc.returncode != 0:
+        if proc.returncode != 0 and not tolerate_error:
             _error('kops failed with code {}'.format(proc.returncode))
         if get_output:
-            return stdout
+            return stdout if proc.returncode == 0 else None # If None is returned, an error ocurred and 'tolerate_error' has been setted
     else:
         pass
 

@@ -6,5 +6,4 @@ metadata:
     alertmanager: main
 spec:
   replicas: 3
-  version: v0.7.1
-  externalUrl: http://127.0.0.1:8001/api/v1/proxy/namespaces/monitoring/services/alertmanager-main:web/
+  version: v0.14.0

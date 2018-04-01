@@ -21,12 +21,18 @@ Write your secrets in secrets.yaml, see secrets.yaml.sample.
 The ./kops script supports a few subcommands and a number of arguments:
 
 ### Create a Cluster
-The create subcommand allows you to create a Kubernetes cluster within your AWS account.
+The create subcommand allows you to create a Kubernetes cluster within your AWS account. You must have AWS CLI configured and S3 bucket created.
+
+See [Setting AWS cluster](https://github.com/kubernetes/kops/blob/master/docs/aws.md) for more information.
+
+```
+./kops --aws_profile <preconfigured-aws-profile> create <cluster-name> <cluster-category> <email-for-notifications> <smtp-domain> <base-domain-for-cluster> <s3-bucket-name>
+```
 
 Example:
 
 ```
-./kops --aws_profile example create app staging contact@example.com email-smtp.eu-west-1.amazonaws.com:587 example.com clusters.example.com
+./kops --aws_profile example create my-cluster staging contact@example.com email-smtp.eu-west-1.amazonaws.com:587 example.com my-cluster-bucket
 ```
 
 ## Logging
@@ -50,4 +56,15 @@ manifests for the rest of the stack. Prometheus Operator will take care of upgra
 components in the cluster.
 
 ### Visualization
-We use Grafana for visualizing monitoring information.
+We use Grafana for visualizing monitoring information, is pre-configured with useful dashboards.
+
+In order to access Prometheus Operator, start `kubectl --kubeconfig $KUBECONFIG proxy 8001` and open.
+
+For Grafana UI:
+http://localhost:8001/api/v1/namespaces/monitoring/services/grafana/proxy in your browser.
+
+For AlertManager UI:
+http://localhost:8001/api/v1/namespaces/monitoring/services/alertmanager-main:web/proxy in your browser.
+
+For Prometheus UI:
+http://localhost:8001/api/v1/namespaces/monitoring/services/prometheus-operated:web/proxy in your browser.
