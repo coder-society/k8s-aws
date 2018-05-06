@@ -277,9 +277,6 @@ def _cmd_create(args):
     else:
         _error('Couldn\'t determine a unique cluster name')
 
-    # Use three availability zones and one master for each in order to obtain
-    # high availability
-    zones = 'eu-central-1a,eu-central-1b,eu-central-1c'
     full_cluster_name = '{}-{}.{}'.format(
         cluster_name, cluster_number, args.domain
     )
@@ -295,10 +292,11 @@ def _cmd_create(args):
         # https://kubernetes.io/docs/admin/authentication/#x509-client-certs,
         # and then combine with RBAC:
         # https://kubernetes.io/docs/admin/authorization/rbac/
+        zones = args.zones.split(',')
         _run_kops([
             'create', 'cluster', '--zones', zones, '--master-zones', zones,
             '--topology', 'private', '--networking', 'flannel',
-            '--master-size', 'm4.large', '--node-size', 'm4.large',
+            '--master-size', args.master_size, '--node-size', args.worker_size,
             '--node-count', args.worker_count, '--bastion', '--cloud', 'aws',
             '--master-volume-size', args.master_volume_size,
             '--node-volume-size', args.worker_volume_size,
@@ -482,6 +480,20 @@ _cl_parser_create.add_argument(
     '--worker_volume_size',
     help='Specify worker root volume size in GBs [default: %(default)s]',
     default='128'
+)
+_cl_parser_create.add_argument(
+    '--master_size',
+    help='Specify master size [default: %(default)s]', default='t2.medium'
+)
+_cl_parser_create.add_argument(
+    '--worker_size',
+    help='Specify worker size [default: %(default)s]', default='t2.medium'
+)
+# Use three availability zones and one master for each in order to obtain
+# high availability
+_cl_parser_create.add_argument(
+    '--zones', help='Specify availability zones [default: %(default)s]',
+    default='eu-central-1a,eu-central-1b,eu-central-1c'
 )
 _add_alerting_args(_cl_parser_create)
 _add_domain_arg(_cl_parser_create)
