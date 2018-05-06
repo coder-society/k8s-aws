@@ -25,7 +25,7 @@ spec:
         name: prometheus
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: platinum
+        storageClassName: general
         resources:
           requests:
             storage: 1Ti
