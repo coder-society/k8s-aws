@@ -200,7 +200,7 @@ def _install_addons(kubecfg_path, args):
 
     _generate_addons(args)
 
-    _wait_for_cluster(kubecfg_path)
+    _wait_for_cluster(args)
     while True:
         try:
             install_addon('kube-system-rbac.yaml')
@@ -241,14 +241,16 @@ def _install_addons(kubecfg_path, args):
             time.sleep(5)
 
 
-def _wait_for_cluster(kubecfg_path):
+def _wait_for_cluster(args):
     """Wait for cluster to become ready."""
     while True:
-        proc = subprocess.Popen([
-            'kubectl', '--kubeconfig', kubecfg_path, 'cluster-info',
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = _run_kops(
+            ['validate', 'cluster'],
+            args,
+            ignore_dry_run=True,
+            get_proc=True
+        )
 
-        proc.wait()
         if proc.returncode != 0:
             _info('Waiting for cluster to come up...')
             time.sleep(5)
@@ -395,13 +397,14 @@ def _export_kubecfg(cluster, domain, args):
 
 
 def _run_kops(
-    args, cl_args, ignore_dry_run=False, get_output=False, env={},
+    args, cl_args, ignore_dry_run=False, get_output=False, env={}, get_proc=False
 ):
     command = [
         'kops', '--state', 's3://{}'.format(cl_args.state_bucket),
     ] + args
 
     _info(' '.join(command))
+
     merged_env = {**{
         'AWS_PROFILE': cl_args.aws_profile,
     }, **env}
@@ -419,6 +422,8 @@ def _run_kops(
                 command, env={**os.environ, **merged_env}
             )
             proc.wait()
+        if get_proc:
+            return proc
         if proc.returncode != 0:
             _error('kops failed with code {}'.format(proc.returncode))
         if get_output:
