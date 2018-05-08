@@ -424,10 +424,10 @@ def _run_kops(
             proc.wait()
         if get_proc:
             return proc
-        if proc.returncode != 0:
-            _error('kops failed with code {}'.format(proc.returncode))
         if get_output:
             return stdout
+        if proc.returncode != 0:
+            _error('kops failed with code {}'.format(proc.returncode))
     else:
         pass
 
