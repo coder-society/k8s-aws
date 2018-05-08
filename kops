@@ -292,7 +292,7 @@ def _cmd_create(args):
         # https://kubernetes.io/docs/admin/authentication/#x509-client-certs,
         # and then combine with RBAC:
         # https://kubernetes.io/docs/admin/authorization/rbac/
-        zones = args.zones.split(',')
+        zones = args.zones
         _run_kops([
             'create', 'cluster', '--zones', zones, '--master-zones', zones,
             '--topology', 'private', '--networking', 'flannel',
@@ -400,6 +400,7 @@ def _run_kops(
     command = [
         'kops', '--state', 's3://{}'.format(cl_args.state_bucket),
     ] + args
+
     _info(' '.join(command))
     merged_env = {**{
         'AWS_PROFILE': cl_args.aws_profile,
